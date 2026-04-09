@@ -15,7 +15,7 @@ function moonlightDistShims() {
       if (!importer) return null
       const normalizedImporter = importer.replaceAll('\\', '/')
       if (source === './config.js' && normalizedImporter === distConfigImporter) {
-        return '/config.js'
+        return '\0moonlight-config-js'
       }
       if (source === '../../libopenh264/decoder.js' && normalizedImporter.endsWith(openH264ImporterSuffix)) {
         return '\0moonlight-openh264-decoder-missing'
@@ -23,6 +23,9 @@ function moonlightDistShims() {
       return null
     },
     load(id) {
+      if (id === '\0moonlight-config-js') {
+        return 'export default { path_prefix: \"\" }'
+      }
       if (id === '\0moonlight-openh264-decoder-missing') {
         return 'throw new Error(\"openh264 decoder module is not present in this repo checkout\")'
       }

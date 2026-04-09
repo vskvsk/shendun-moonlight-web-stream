@@ -54,7 +54,9 @@ function buildRequest(endpoint, method, init = {}) {
 // API 请求
 export async function fetchApi(endpoint, method = 'GET', init = {}) {
   const [url, request] = buildRequest(endpoint, method, init)
-  request.signal = AbortSignal.timeout(API_TIMEOUT)
+  if (!init.noTimeout) {
+    request.signal = AbortSignal.timeout(API_TIMEOUT)
+  }
 
   let response
   try {
@@ -72,6 +74,9 @@ export async function fetchApi(endpoint, method = 'GET', init = {}) {
   }
 
   if (init.response === 'jsonStreaming') {
+    if (!response.body) {
+      throw new FetchError('failed', endpoint, method, response)
+    }
     return new StreamedJsonResponse(response.body.getReader())
   }
 
@@ -87,6 +92,7 @@ class StreamedJsonResponse {
     this._reader = reader
     this._decoder = new TextDecoder()
     this._buffer = ''
+    this.response = null
   }
 
   async next() {
@@ -151,6 +157,25 @@ export async function apiGetHosts() {
 export async function apiGetHost(hostId) {
   const response = await fetchApi('/host', 'GET', { query: { host_id: hostId } })
   return response.host
+}
+
+export async function apiPostHost(data) {
+  const response = await fetchApi('/host', 'POST', { json: data })
+  return response.host
+}
+
+export async function apiDeleteHost(hostId) {
+  return fetchApi('/host', 'DELETE', { query: { host_id: hostId }, response: 'ignore' })
+}
+
+export async function apiPostPair(request) {
+  const stream = await fetchApi('/pair', 'POST', {
+    json: request,
+    response: 'jsonStreaming',
+    noTimeout: true
+  })
+  stream.response = await stream.next()
+  return stream
 }
 
 // 获取应用列表

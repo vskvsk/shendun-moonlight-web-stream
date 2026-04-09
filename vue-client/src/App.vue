@@ -28,6 +28,8 @@
           :hosts="hosts"
           :user="currentUser"
           @select="selectHost"
+          @add-host="onAddHost"
+          @delete="onDeleteHost"
           @logout="logout"
           @refresh="loadHosts"
         />
@@ -93,6 +95,21 @@
       @error="onStreamError"
       @ready="onStreamReady"
     />
+
+    <teleport to="body">
+      <div v-if="pairingPin" class="modal-backdrop">
+        <div class="modal pairing-modal">
+          <div class="modal-header">
+            <h3>正在配对</h3>
+          </div>
+          <div class="modal-body text-center">
+            <p>请在目标主机的 Sunshine/GeForce Experience 中输入以下 PIN：</p>
+            <div class="pin-display">{{ pairingPin }}</div>
+            <p class="waiting-text">等待配对完成...</p>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -106,8 +123,74 @@ import GameGrid from '@/components/GameGrid.vue'
 import LoginScreen from '@/components/LoginScreen.vue'
 import HostList from '@/components/HostList.vue'
 import AppFooter from '@/components/AppFooter.vue'
-import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetApps, apiGetAppImage } from '@/services/api.js'
-import { MOONLIGHT_CONFIG } from '@/config/moonlight.js'
+import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetHost, apiPostHost, apiDeleteHost, apiPostPair, apiGetApps, apiGetAppImage } from '@/services/api.js'
+import { MOONLIGHT_CONFIG, getRuntimeUrlParams, getRuntimePin } from '@/config/moonlight.js'
+
+const urlParams = getRuntimeUrlParams()
+
+function getFirstParam(keys) {
+  for (const key of keys) {
+    const value = urlParams.get(key)
+    if (value != null && String(value).trim() !== '') return String(value).trim()
+  }
+  return null
+}
+
+function toInt(value) {
+  if (value == null) return null
+  const n = Number.parseInt(String(value), 10)
+  return Number.isFinite(n) ? n : null
+}
+
+const deepLink = {
+  hostId: toInt(getFirstParam(['hostId', 'host_id', 'hostID'])),
+  appId: toInt(getFirstParam(['appId', 'app_id', 'appID'])),
+  address: getFirstParam(['address', 'addr', 'hostAddress', 'host_address']),
+  ip: getFirstParam(['ip', 'hostIp', 'host_ip']),
+  port: toInt(getFirstParam(['port', 'hostPort', 'host_port', 'http_port']))
+}
+
+function normalizeAddress(value) {
+  if (!value) return ''
+  let v = String(value).trim()
+  v = v.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, '')
+  v = v.replace(/[/?#].*$/, '')
+  v = v.replace(/\/+$/, '')
+  return v.toLowerCase()
+}
+
+function parseHostAndPort(value) {
+  const raw = normalizeAddress(value)
+  if (!raw) return { host: '', port: null }
+  const lastColon = raw.lastIndexOf(':')
+  if (lastColon === -1) return { host: raw, port: null }
+  const maybePort = raw.slice(lastColon + 1)
+  if (!/^\d+$/.test(maybePort)) return { host: raw, port: null }
+  const port = Number.parseInt(maybePort, 10)
+  if (!Number.isFinite(port)) return { host: raw, port: null }
+  return { host: raw.slice(0, lastColon), port }
+}
+
+const deepLinkResolved = (() => {
+  const fromAddress = deepLink.address ? parseHostAndPort(deepLink.address) : null
+  const host = (deepLink.ip ? normalizeAddress(deepLink.ip) : '') || (fromAddress?.host ?? '')
+  const port = deepLink.port ?? (fromAddress?.port ?? null)
+  return { host, port }
+})()
+
+function hostMatchesDeepLink(host) {
+  if (!host) return false
+  if (deepLink.hostId != null) return Number(host.host_id) === deepLink.hostId
+  const hostAddress = normalizeAddress(host.address)
+  if (!deepLinkResolved.host) return false
+  if (hostAddress !== deepLinkResolved.host && !hostAddress.includes(deepLinkResolved.host)) return false
+  if (deepLinkResolved.port == null) return true
+  const p = deepLinkResolved.port
+  if (Number(host.http_port) === p) return true
+  if (Number(host.https_port) === p) return true
+  if (Number(host.external_port) === p) return true
+  return hostAddress.endsWith(`:${p}`)
+}
 
 // ============ 状态 ============
 const isLoggedIn = ref(false)
@@ -122,6 +205,7 @@ const isStreaming = ref(false)
 const appImages = ref(new Map())
 const searchQuery = ref('')
 const appsLoading = ref(false)
+const pairingPin = ref(null)
 
 // ============ 表单和设置 ============
 const loginForm = reactive({
@@ -202,7 +286,143 @@ const logout = () => {
   hosts.value = []
   apps.value = []
   selectedHost.value = null
+  selectedApp.value = null
+  isStreaming.value = false
+  pairingPin.value = null
   fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+}
+
+const autoLinkState = reactive({ hostSelected: false, appStarted: false, hostCreated: false, pairingStarted: false })
+
+const mergeHostIntoList = (host) => {
+  if (!host || host.host_id == null) return
+  const idx = hosts.value.findIndex(h => h.host_id === host.host_id)
+  if (idx === -1) {
+    hosts.value = [...hosts.value, host]
+  } else {
+    hosts.value[idx] = { ...hosts.value[idx], ...host }
+  }
+}
+
+const tryPairHostWithRuntimePin = async (host) => {
+  const pin = getRuntimePin()
+  if (!pin) return host
+  if (!host || host.host_id == null) return host
+  if (host.paired && host.paired !== 'NotPaired') return host
+
+  try {
+    const stream = await apiPostPair({ host_id: host.host_id, pin })
+    const stage2 = await stream.next()
+
+    const pairedHost =
+      (stage2 && typeof stage2 === 'object' && stage2.Paired) ||
+      (stream.response && typeof stream.response === 'object' && stream.response.Paired) ||
+      null
+
+    if (pairedHost) {
+      mergeHostIntoList(pairedHost)
+      return pairedHost
+    }
+
+    const refreshed = await apiGetHost(host.host_id)
+    mergeHostIntoList(refreshed)
+    return refreshed
+  } catch {
+    return host
+  }
+}
+
+const tryAutoSelectHost = async () => {
+  if (autoLinkState.hostSelected) return
+  if (!isLoggedIn.value) return
+  if (selectedHost.value) return
+
+  let matched = null
+
+  if (deepLink.hostId != null) {
+    try {
+      const detailed = await apiGetHost(deepLink.hostId)
+      mergeHostIntoList(detailed)
+      matched = detailed
+    } catch {
+    }
+  }
+
+  if (!matched && deepLinkResolved.host) {
+    for (const host of hosts.value) {
+      if (host?.address) {
+        if (hostMatchesDeepLink(host)) {
+          matched = host
+          break
+        }
+      } else if (host?.host_id != null) {
+        try {
+          const detailed = await apiGetHost(host.host_id)
+          mergeHostIntoList(detailed)
+          if (hostMatchesDeepLink(detailed)) {
+            matched = detailed
+            break
+          }
+        } catch {
+        }
+      }
+    }
+  }
+
+  if (!matched && deepLinkResolved.host && !autoLinkState.hostCreated) {
+    autoLinkState.hostCreated = true
+    try {
+      const data = { address: deepLinkResolved.host, ...(deepLinkResolved.port != null ? { http_port: deepLinkResolved.port } : {}) }
+      const created = await apiPostHost(data)
+      mergeHostIntoList(created)
+      matched = created
+    } catch {
+    }
+  }
+
+  if (!matched) return
+
+  if (matched.paired === 'NotPaired') {
+    if (getRuntimePin()) {
+      matched = await tryPairHostWithRuntimePin(matched)
+    } else if (!autoLinkState.pairingStarted) {
+      autoLinkState.pairingStarted = true
+      try {
+        const stream = await apiPostPair({ host_id: matched.host_id })
+        if (stream.response && typeof stream.response === 'object' && stream.response.Pin) {
+          pairingPin.value = stream.response.Pin
+          const stage2 = await stream.next()
+          pairingPin.value = null
+
+          const pairedHost =
+            (stage2 && typeof stage2 === 'object' && stage2.Paired) ||
+            (stream.response && typeof stream.response === 'object' && stream.response.Paired) ||
+            null
+
+          if (pairedHost) {
+            mergeHostIntoList(pairedHost)
+            matched = pairedHost
+          } else {
+            const refreshed = await apiGetHost(matched.host_id)
+            mergeHostIntoList(refreshed)
+            matched = refreshed
+          }
+        }
+      } catch {
+        pairingPin.value = null
+        return
+      }
+    } else {
+      return
+    }
+  }
+
+  if (matched.paired === 'NotPaired') {
+    return
+  }
+
+  autoLinkState.hostSelected = true
+  await selectHost(matched)
 }
 
 // 加载主机列表
@@ -212,6 +432,7 @@ const loadHosts = async () => {
     const first = await stream.next()
     if (first && first.hosts) {
       hosts.value = first.hosts
+      await tryAutoSelectHost()
     }
     let item
     while ((item = await stream.next()) !== null) {
@@ -221,6 +442,7 @@ const loadHosts = async () => {
           hosts.value[idx] = { ...hosts.value[idx], ...item }
         }
       }
+      await tryAutoSelectHost()
     }
   } catch (e) {
     console.error('加载主机列表失败:', e)
@@ -229,19 +451,59 @@ const loadHosts = async () => {
 
 // 选择主机
 const selectHost = async (host) => {
-  selectedHost.value = host
+  let selected = host
+  if (selected?.paired === 'NotPaired' && getRuntimePin()) {
+    selected = await tryPairHostWithRuntimePin(selected)
+  }
+  selectedHost.value = selected
   searchQuery.value = ''
   appsLoading.value = true
 
   try {
-    const appList = await apiGetApps(host.host_id)
+    const appList = await apiGetApps(selected.host_id)
     apps.value = appList
-    appList.forEach(app => loadAppImage(host.host_id, app.app_id))
+    appList.forEach(app => loadAppImage(selected.host_id, app.app_id))
+    if (deepLink.appId != null && !autoLinkState.appStarted) {
+      autoLinkState.appStarted = true
+      const matchedApp = appList.find(app => Number(app.app_id) === deepLink.appId) || { app_id: deepLink.appId }
+      startGame(matchedApp)
+    }
   } catch (e) {
     console.error('加载游戏列表失败:', e)
     apps.value = []
   } finally {
     appsLoading.value = false
+  }
+}
+
+const onAddHost = async (payload) => {
+  try {
+    const host = await apiPostHost({
+      address: payload.address,
+      ...(payload.http_port != null ? { http_port: payload.http_port } : {})
+    })
+    mergeHostIntoList(host)
+    if (payload.pin) {
+      await apiPostPair({ host_id: host.host_id, pin: payload.pin })
+    }
+    await loadHosts()
+  } catch {
+  }
+}
+
+const onDeleteHost = async (host) => {
+  if (!host?.host_id) return
+  const name = host.name || host.address || host.host_id
+  if (!confirm(`确定删除主机「${name}」吗？`)) return
+
+  try {
+    await apiDeleteHost(host.host_id)
+    hosts.value = hosts.value.filter(h => h.host_id !== host.host_id)
+    if (selectedHost.value?.host_id === host.host_id) {
+      selectedHost.value = null
+      apps.value = []
+    }
+  } catch {
   }
 }
 
@@ -373,5 +635,70 @@ onMounted(() => checkAuth())
 @media (max-width: 768px) {
   .games-topbar { padding-top: 64px; }
   .games-topbar h2 { font-size: 18px; }
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+
+.modal {
+  width: min(520px, 100%);
+  background: rgba(18, 18, 26, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #fff;
+}
+
+.pairing-modal {
+  width: min(400px, 100%);
+}
+
+.text-center {
+  text-align: center;
+}
+
+.pin-display {
+  font-size: 36px;
+  font-weight: bold;
+  letter-spacing: 4px;
+  color: #00d4ff;
+  margin: 20px 0;
+  padding: 16px;
+  background: rgba(0, 212, 255, 0.1);
+  border-radius: 12px;
+}
+
+.waiting-text {
+  color: #888;
+  font-size: 14px;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 </style>
