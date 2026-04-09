@@ -50,6 +50,7 @@
 
       <!-- 用户区域 -->
       <div class="user-area">
+        <div v-if="hostName" class="current-host" :title="hostName">{{ hostName }}</div>
         <div class="user-avatar" @click.stop="toggleUserMenu">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
@@ -74,6 +75,10 @@ defineProps({
   showSearch: {
     type: Boolean,
     default: true
+  },
+  hostName: {
+    type: String,
+    default: ''
   }
 })
 
@@ -249,6 +254,19 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   position: relative;
+}
+
+.current-host {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .user-avatar {

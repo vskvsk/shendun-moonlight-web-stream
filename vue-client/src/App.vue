@@ -16,6 +16,7 @@
       <!-- 顶部导航 -->
       <TopNav
         v-model="searchQuery"
+        :host-name="selectedHost?.name ?? ''"
         @logo-click="goHome"
         @nav-click="handleNav"
         @logout="logout"
@@ -34,10 +35,7 @@
 
         <!-- 游戏列表 -->
         <template v-else>
-          <!-- 返回栏 -->
-          <div class="games-topbar">
-            <h2>{{ selectedHost.name }}</h2>
-          </div>
+          <div class="games-topbar-spacer" />
 
           <!-- Hero 轮播 -->
           <HeroCarousel
@@ -593,10 +591,9 @@ onMounted(() => checkAuth())
   padding-top: 64px;
 }
 
-.games-topbar h2 {
-  font-size: 20px;
-  margin: 0;
-  color: #ddd;
+.games-topbar-spacer {
+  height: 64px;
+  margin-bottom: 24px;
 }
 
 .host-transition {
@@ -686,8 +683,7 @@ onMounted(() => checkAuth())
 }
 
 @media (max-width: 768px) {
-  .games-topbar { padding-top: 64px; }
-  .games-topbar h2 { font-size: 18px; }
+  .games-topbar-spacer { height: 64px; }
 }
 
 .modal-backdrop {
