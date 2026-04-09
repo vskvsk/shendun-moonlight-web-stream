@@ -8,16 +8,16 @@ const DEV_SERVER_PORT = 8080
 
 function moonlightDistShims() {
   const distConfigImporter = resolve(__dirname, '../dist/config_.js').replaceAll('\\', '/')
-  const openH264ImporterSuffix = '/dist/stream/video/openh264_decoder_pipe.js'
   return {
     name: 'moonlight-dist-shims',
+    enforce: 'pre',
     resolveId(source, importer) {
       if (!importer) return null
       const normalizedImporter = importer.replaceAll('\\', '/')
       if (source === './config.js' && normalizedImporter === distConfigImporter) {
         return '\0moonlight-config-js'
       }
-      if (source === '../../libopenh264/decoder.js' && normalizedImporter.endsWith(openH264ImporterSuffix)) {
+      if (source.includes('libopenh264/decoder.js')) {
         return '\0moonlight-openh264-decoder-missing'
       }
       return null
@@ -49,10 +49,6 @@ export default defineConfig({
       allow: ['..']
     },
     proxy: {
-      '/config.js': {
-        target: `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`,
-        changeOrigin: true
-      },
       '/api/host/stream': {
         target: `ws://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`,
         ws: true,

@@ -29,7 +29,6 @@
         <a href="#" class="nav-link active" @click.prevent="$emit('nav-click', 'home')">首页</a>
         <a href="#" class="nav-link" @click.prevent="$emit('nav-click', 'library')">游戏库</a>
         <a href="#" class="nav-link" @click.prevent="$emit('nav-click', 'ranking')">热玩排行</a>
-        <a href="#" class="nav-link" @click.prevent="$emit('nav-click', 'vip')">会员</a>
       </nav>
     </div>
 
@@ -51,11 +50,13 @@
 
       <!-- 用户区域 -->
       <div class="user-area">
-        <button class="btn-vip">开通会员</button>
-        <div class="user-avatar" @click="$emit('user-click')">
+        <div class="user-avatar" @click.stop="toggleUserMenu">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
           </svg>
+        </div>
+        <div v-if="isUserMenuOpen" class="user-menu" @click.stop>
+          <button class="user-menu-item" @click="onLogout">退出系统</button>
         </div>
       </div>
     </div>
@@ -63,6 +64,8 @@
 </template>
 
 <script setup>
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+
 defineProps({
   modelValue: {
     type: String,
@@ -74,7 +77,26 @@ defineProps({
   }
 })
 
-defineEmits(['update:modelValue', 'logo-click', 'nav-click', 'user-click'])
+const emit = defineEmits(['update:modelValue', 'logo-click', 'nav-click', 'logout'])
+
+const isUserMenuOpen = ref(false)
+const toggleUserMenu = () => {
+  isUserMenuOpen.value = !isUserMenuOpen.value
+}
+const onLogout = () => {
+  isUserMenuOpen.value = false
+  emit('logout')
+}
+
+const onWindowClick = () => {
+  isUserMenuOpen.value = false
+}
+onMounted(() => {
+  window.addEventListener('click', onWindowClick)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('click', onWindowClick)
+})
 </script>
 
 <style scoped>
@@ -226,23 +248,7 @@ defineEmits(['update:modelValue', 'logo-click', 'nav-click', 'user-click'])
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.btn-vip {
-  padding: 8px 18px;
-  background: linear-gradient(135deg, #ffd700, #ff8c00);
-  border: none;
-  border-radius: 16px;
-  color: #1a1a1a;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.btn-vip:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 15px rgba(255, 140, 0, 0.4);
+  position: relative;
 }
 
 .user-avatar {
@@ -267,6 +273,35 @@ defineEmits(['update:modelValue', 'logo-click', 'nav-click', 'user-click'])
   color: #fff;
 }
 
+.user-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 140px;
+  background: rgba(18, 18, 26, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  z-index: 200;
+}
+
+.user-menu-item {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.user-menu-item:hover {
+  background: rgba(255, 107, 107, 0.12);
+  color: #ffb3b3;
+}
+
 @media (max-width: 1200px) {
   .top-nav { padding: 0 24px; }
   .nav-links { display: none; }
@@ -274,6 +309,5 @@ defineEmits(['update:modelValue', 'logo-click', 'nav-click', 'user-click'])
 
 @media (max-width: 768px) {
   .search-box input { width: 160px; }
-  .btn-vip { display: none; }
 }
 </style>

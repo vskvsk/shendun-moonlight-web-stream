@@ -18,7 +18,7 @@
         v-model="searchQuery"
         @logo-click="goHome"
         @nav-click="handleNav"
-        @user-click="showUserMenu"
+        @logout="logout"
       />
 
       <main class="main-content">
@@ -547,17 +547,12 @@ const startGame = (app) => {
 
 // 导航处理
 const goHome = () => {
-  selectedHost.value = null
+  window.location.reload()
 }
 
 const handleNav = (nav) => {
   console.log('导航到:', nav)
   // 可以在这里添加路由跳转逻辑
-}
-
-const showUserMenu = () => {
-  console.log('显示用户菜单')
-  // 可以在这里显示用户下拉菜单
 }
 
 // 流事件处理
