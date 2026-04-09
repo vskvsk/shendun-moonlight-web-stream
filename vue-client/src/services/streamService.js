@@ -1,9 +1,9 @@
 // 云游戏流服务 - 封装 Moonlight Web 核心功能
 import { MOONLIGHT_CONFIG, buildUrl } from '@/config/moonlight.js'
-import '@moonlight/polyfill/index.js'
-import { Stream } from '@moonlight/stream/index.js'
-import { defaultStreamInputConfig, StreamInput } from '@moonlight/stream/input.js'
-import { Logger } from '@moonlight/stream/log.js'
+import '../../../dist/polyfill/index.js'
+import { Stream } from '../../../dist/stream/index.js'
+import { defaultStreamInputConfig, StreamInput } from '../../../dist/stream/input.js'
+import { Logger } from '../../../dist/stream/log.js'
 
 const moonlightModules = { Stream, defaultStreamInputConfig, StreamInput, Logger }
 

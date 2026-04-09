@@ -6,12 +6,37 @@ import { resolve } from 'path'
 const DEV_SERVER_HOST = 'localhost'
 const DEV_SERVER_PORT = 8080
 
+function moonlightDistShims() {
+  const distConfigImporter = resolve(__dirname, '../dist/config_.js').replaceAll('\\', '/')
+  const openH264ImporterSuffix = '/dist/stream/video/openh264_decoder_pipe.js'
+  return {
+    name: 'moonlight-dist-shims',
+    resolveId(source, importer) {
+      if (!importer) return null
+      const normalizedImporter = importer.replaceAll('\\', '/')
+      if (source === './config.js' && normalizedImporter === distConfigImporter) {
+        return '/config.js'
+      }
+      if (source === '../../libopenh264/decoder.js' && normalizedImporter.endsWith(openH264ImporterSuffix)) {
+        return '\0moonlight-openh264-decoder-missing'
+      }
+      return null
+    },
+    load(id) {
+      if (id === '\0moonlight-openh264-decoder-missing') {
+        return 'throw new Error(\"openh264 decoder module is not present in this repo checkout\")'
+      }
+      return null
+    }
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), moonlightDistShims()],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@moonlight': resolve(__dirname, '../moonlight-web-stream-file')
+      '@moonlight': resolve(__dirname, '../dist')
     }
   },
   server: {
@@ -21,6 +46,10 @@ export default defineConfig({
       allow: ['..']
     },
     proxy: {
+      '/config.js': {
+        target: `http://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`,
+        changeOrigin: true
+      },
       '/api/host/stream': {
         target: `ws://${DEV_SERVER_HOST}:${DEV_SERVER_PORT}`,
         ws: true,
