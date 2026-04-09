@@ -551,6 +551,14 @@ class MainApp implements Component {
                 return
             }
         }
+        try {
+            const host = await apiGetHost(this.api, { host_id: hostId })
+            if (host.paired === "Paired") {
+                this.setCurrentDisplay("games", { hostId })
+                return
+            }
+        } catch {
+        }
         const pairedStarted = await this.autoPair(hostId, pin)
         if (!pairedStarted) {
             return
