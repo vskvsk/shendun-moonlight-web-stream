@@ -56,7 +56,11 @@ export class StreamService {
       const screenSize = [window.innerWidth, window.innerHeight]
 
       // 创建流实例
-      this.stream = new modules.Stream(this.api, hostId, appId, streamSettings, screenSize)
+      const permissions = {
+        allow_transport_webrtc: true,
+        allow_transport_websockets: true
+      }
+      this.stream = new modules.Stream(this.api, hostId, appId, streamSettings, screenSize, permissions)
       
       // 设置事件监听
       this.setupStreamListeners()
