@@ -22,23 +22,20 @@
       />
 
       <main class="main-content">
-        <!-- 主机列表 -->
-        <HostList
-          v-if="!selectedHost"
-          :hosts="hosts"
-          :user="currentUser"
-          @select="selectHost"
-          @add-host="onAddHost"
-          @delete="onDeleteHost"
-          @logout="logout"
-          @refresh="loadHosts"
-        />
+        <div v-if="!selectedHost" class="host-transition">
+          <div class="spinner" />
+          <h2 class="host-transition-title">{{ hostTransitionTitle }}</h2>
+          <p class="host-transition-subtitle">{{ hostTransitionSubtitle }}</p>
+          <div class="host-transition-actions">
+            <button class="btn-secondary" @click="reloadAndConnect">重试</button>
+            <button class="btn-secondary" @click="logout">退出登录</button>
+          </div>
+        </div>
 
         <!-- 游戏列表 -->
         <template v-else>
           <!-- 返回栏 -->
           <div class="games-topbar">
-            <button class="btn-back" @click="selectedHost = null">← 返回主机列表</button>
             <h2>{{ selectedHost.name }}</h2>
           </div>
 
@@ -121,9 +118,8 @@ import HeroCarousel from '@/components/HeroCarousel.vue'
 import HotRanking from '@/components/HotRanking.vue'
 import GameGrid from '@/components/GameGrid.vue'
 import LoginScreen from '@/components/LoginScreen.vue'
-import HostList from '@/components/HostList.vue'
 import AppFooter from '@/components/AppFooter.vue'
-import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetHost, apiPostHost, apiDeleteHost, apiPostPair, apiGetApps, apiGetAppImage } from '@/services/api.js'
+import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetHost, apiPostHost, apiPostPair, apiGetApps, apiGetAppImage } from '@/services/api.js'
 import { MOONLIGHT_CONFIG, getRuntimeUrlParams, getRuntimePin } from '@/config/moonlight.js'
 
 const urlParams = getRuntimeUrlParams()
@@ -206,6 +202,22 @@ const appImages = ref(new Map())
 const searchQuery = ref('')
 const appsLoading = ref(false)
 const pairingPin = ref(null)
+const hostsLoading = ref(false)
+
+const hostTransitionTitle = computed(() => {
+  if (pairingPin.value) return '正在配对主机'
+  if (hostsLoading.value) return '正在加载主机'
+  if (!hosts.value.length) return '正在等待主机'
+  return '正在连接主机'
+})
+
+const hostTransitionSubtitle = computed(() => {
+  if (pairingPin.value) return '请在 Sunshine/GeForce Experience 中完成配对'
+  if (hostsLoading.value) return '正在获取主机列表...'
+  if (!hosts.value.length && (deepLinkResolved.host || deepLink.hostId != null)) return '正在创建或查找目标主机...'
+  if (!hosts.value.length) return '未发现主机，请先在后端添加主机，或通过 URL 传入 address 参数'
+  return '初始化中...'
+})
 
 // ============ 表单和设置 ============
 const loginForm = reactive({
@@ -289,6 +301,11 @@ const logout = () => {
   selectedApp.value = null
   isStreaming.value = false
   pairingPin.value = null
+  hostsLoading.value = false
+  autoLinkState.hostSelected = false
+  autoLinkState.appStarted = false
+  autoLinkState.hostCreated = false
+  autoLinkState.pairingStarted = false
   fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
 }
 
@@ -380,6 +397,24 @@ const tryAutoSelectHost = async () => {
     }
   }
 
+  if (!matched) {
+    if (hosts.value.length) {
+      let best = null
+      let bestScore = -1
+      for (const host of hosts.value) {
+        if (!host || host.host_id == null) continue
+        let score = 0
+        if (host.paired && host.paired !== 'NotPaired') score += 10
+        if (host.server_state != null) score += 5
+        if (best == null || score > bestScore || (score === bestScore && host.host_id < best.host_id)) {
+          best = host
+          bestScore = score
+        }
+      }
+      matched = best
+    }
+  }
+
   if (!matched) return
 
   if (matched.paired === 'NotPaired') {
@@ -427,6 +462,7 @@ const tryAutoSelectHost = async () => {
 
 // 加载主机列表
 const loadHosts = async () => {
+  hostsLoading.value = true
   try {
     const stream = await apiGetHosts()
     const first = await stream.next()
@@ -446,7 +482,23 @@ const loadHosts = async () => {
     }
   } catch (e) {
     console.error('加载主机列表失败:', e)
+  } finally {
+    hostsLoading.value = false
   }
+}
+
+const reloadAndConnect = async () => {
+  selectedHost.value = null
+  selectedApp.value = null
+  isStreaming.value = false
+  apps.value = []
+  appImages.value = new Map()
+  pairingPin.value = null
+  autoLinkState.hostSelected = false
+  autoLinkState.appStarted = false
+  autoLinkState.hostCreated = false
+  autoLinkState.pairingStarted = false
+  await loadHosts()
 }
 
 // 选择主机
@@ -473,37 +525,6 @@ const selectHost = async (host) => {
     apps.value = []
   } finally {
     appsLoading.value = false
-  }
-}
-
-const onAddHost = async (payload) => {
-  try {
-    const host = await apiPostHost({
-      address: payload.address,
-      ...(payload.http_port != null ? { http_port: payload.http_port } : {})
-    })
-    mergeHostIntoList(host)
-    if (payload.pin) {
-      await apiPostPair({ host_id: host.host_id, pin: payload.pin })
-    }
-    await loadHosts()
-  } catch {
-  }
-}
-
-const onDeleteHost = async (host) => {
-  if (!host?.host_id) return
-  const name = host.name || host.address || host.host_id
-  if (!confirm(`确定删除主机「${name}」吗？`)) return
-
-  try {
-    await apiDeleteHost(host.host_id)
-    hosts.value = hosts.value.filter(h => h.host_id !== host.host_id)
-    if (selectedHost.value?.host_id === host.host_id) {
-      selectedHost.value = null
-      apps.value = []
-    }
-  } catch {
   }
 }
 
@@ -577,23 +598,60 @@ onMounted(() => checkAuth())
   padding-top: 64px;
 }
 
-.btn-back {
-  background: none;
-  border: none;
-  color: #888;
-  cursor: pointer;
-  font-size: 14px;
-  transition: color 0.2s;
-}
-
-.btn-back:hover {
-  color: #fff;
-}
-
 .games-topbar h2 {
   font-size: 20px;
   margin: 0;
   color: #ddd;
+}
+
+.host-transition {
+  padding-top: 96px;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.host-transition-title {
+  margin: 8px 0 0;
+  font-size: 20px;
+  color: #fff;
+}
+
+.host-transition-subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  max-width: 520px;
+}
+
+.host-transition-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.btn-secondary {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+}
+
+.spinner {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: rgba(0, 212, 255, 0.85);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .empty-wrap {
