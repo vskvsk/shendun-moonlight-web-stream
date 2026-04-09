@@ -10,7 +10,6 @@
       </div>
       <div class="header-actions">
         <span class="user-info" v-if="user">欢迎, {{ user.name || '用户' }}</span>
-        <button class="btn-add" @click="openAddModal">添加主机</button>
         <button class="btn-refresh" @click="$emit('refresh')" title="刷新">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
@@ -29,11 +28,6 @@
         :class="(host.server_state || 'offline').toLowerCase()"
         @click="$emit('select', host)"
       >
-        <button class="btn-delete" title="删除主机" @click.stop="onDelete(host)">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1z"/>
-          </svg>
-        </button>
         <div class="host-icon">
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h3l-1 1v2h12v-2l-1-1h3c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 13H4V5h16v11z"/>
@@ -62,46 +56,12 @@
         </svg>
       </div>
       <p>暂无可用主机</p>
-      <div class="empty-actions">
-        <button class="btn-refresh-empty" @click="$emit('refresh')">刷新列表</button>
-        <button class="btn-add-empty" @click="openAddModal">添加主机</button>
-      </div>
+      <button class="btn-refresh-empty" @click="$emit('refresh')">刷新列表</button>
     </div>
-
-    <teleport to="body">
-      <div v-if="isAddModalOpen" class="modal-backdrop" @click.self="closeAddModal">
-        <div class="modal">
-          <div class="modal-header">
-            <h3>添加主机</h3>
-            <button class="modal-close" @click="closeAddModal">×</button>
-          </div>
-          <div class="modal-body">
-            <label class="field">
-              <span>地址</span>
-              <input v-model.trim="addForm.address" placeholder="例如：192.168.1.50" />
-            </label>
-            <label class="field">
-              <span>端口</span>
-              <input v-model.trim="addForm.httpPort" inputmode="numeric" placeholder="例如：47989" />
-            </label>
-            <label class="field">
-              <span>PIN（可选）</span>
-              <input v-model.trim="addForm.pin" inputmode="numeric" placeholder="例如：1234" />
-            </label>
-          </div>
-          <div class="modal-actions">
-            <button class="btn-secondary" @click="closeAddModal">取消</button>
-            <button class="btn-primary" :disabled="!addForm.address" @click="submitAddHost">添加</button>
-          </div>
-        </div>
-      </div>
-    </teleport>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-
 defineProps({
   hosts: {
     type: Array,
@@ -113,7 +73,7 @@ defineProps({
   }
 })
 
-const emit = defineEmits(['select', 'logout', 'refresh', 'add-host', 'delete'])
+defineEmits(['select', 'logout', 'refresh'])
 
 function getStatusText(state) {
   const statusMap = {
@@ -122,34 +82,6 @@ function getStatusText(state) {
     'Offline': '离线'
   }
   return statusMap[state] || '离线'
-}
-
-const isAddModalOpen = ref(false)
-const addForm = reactive({ address: '', httpPort: '', pin: '' })
-
-const openAddModal = () => {
-  addForm.address = ''
-  addForm.httpPort = ''
-  addForm.pin = ''
-  isAddModalOpen.value = true
-}
-
-const closeAddModal = () => {
-  isAddModalOpen.value = false
-}
-
-const submitAddHost = () => {
-  const address = addForm.address?.trim()
-  if (!address) return
-  const httpPort = addForm.httpPort?.trim()
-  const port = httpPort ? Number.parseInt(httpPort, 10) : null
-  const pin = addForm.pin?.trim() || null
-  emit('add-host', { address, http_port: Number.isFinite(port) ? port : null, pin })
-  closeAddModal()
-}
-
-const onDelete = (host) => {
-  emit('delete', host)
 }
 </script>
 
@@ -190,23 +122,6 @@ const onDelete = (host) => {
   display: flex;
   align-items: center;
   gap: 16px;
-}
-
-.btn-add {
-  padding: 8px 14px;
-  background: rgba(0, 212, 255, 0.12);
-  border: 1px solid rgba(0, 212, 255, 0.22);
-  border-radius: 8px;
-  color: #baf3ff;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-add:hover {
-  background: rgba(0, 212, 255, 0.18);
-  border-color: rgba(0, 212, 255, 0.35);
-  color: #fff;
 }
 
 .user-info {
@@ -272,35 +187,6 @@ const onDelete = (host) => {
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s;
-  position: relative;
-}
-
-.btn-delete {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-delete:hover {
-  background: rgba(255, 107, 107, 0.12);
-  border-color: rgba(255, 107, 107, 0.25);
-  color: #ff8d8d;
-}
-
-.btn-delete svg {
-  width: 18px;
-  height: 18px;
 }
 
 .host-card:hover {
@@ -414,12 +300,6 @@ const onDelete = (host) => {
   margin-bottom: 20px;
 }
 
-.empty-actions {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-
 .btn-refresh-empty {
   padding: 10px 24px;
   background: rgba(0, 212, 255, 0.1);
@@ -433,128 +313,6 @@ const onDelete = (host) => {
 
 .btn-refresh-empty:hover {
   background: rgba(0, 212, 255, 0.2);
-}
-
-.btn-add-empty {
-  padding: 10px 18px;
-  border-radius: 8px;
-  background: rgba(0, 212, 255, 0.12);
-  border: 1px solid rgba(0, 212, 255, 0.22);
-  color: #baf3ff;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-add-empty:hover {
-  background: rgba(0, 212, 255, 0.18);
-  border-color: rgba(0, 212, 255, 0.35);
-  color: #fff;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  padding: 20px;
-}
-
-.modal {
-  width: min(520px, 100%);
-  background: rgba(18, 18, 26, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 16px;
-  color: #fff;
-}
-
-.modal-close {
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-}
-
-.modal-body {
-  padding: 16px 18px;
-  display: grid;
-  gap: 12px;
-}
-
-.field {
-  display: grid;
-  gap: 8px;
-}
-
-.field span {
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 12px;
-}
-
-.field input {
-  height: 40px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
-  padding: 0 12px;
-  outline: none;
-}
-
-.field input:focus {
-  border-color: rgba(0, 212, 255, 0.35);
-  background: rgba(0, 212, 255, 0.06);
-}
-
-.modal-actions {
-  padding: 14px 18px 18px;
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.btn-secondary {
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.75);
-  cursor: pointer;
-}
-
-.btn-primary {
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 212, 255, 0.25);
-  background: rgba(0, 212, 255, 0.14);
-  color: #d7faff;
-  cursor: pointer;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (max-width: 768px) {
