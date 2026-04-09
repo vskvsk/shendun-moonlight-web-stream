@@ -230,8 +230,10 @@ export class Host implements Component {
             }
         }
 
+        const pin = new URLSearchParams(window.location.search).get("pin")
         const responseStream = await apiPostPair(this.api, {
-            host_id: this.getHostId()
+            host_id: this.getHostId(),
+            pin: pin ?? null
         })
 
         if (typeof responseStream.response == "string") {

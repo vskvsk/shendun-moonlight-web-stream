@@ -167,6 +167,7 @@ pub struct DeleteHostQuery {
 #[ts(export, export_to = EXPORT_PATH)]
 pub struct PostPairRequest {
     pub host_id: u32,
+    pub pin: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, TS)]

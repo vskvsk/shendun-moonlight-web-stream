@@ -154,10 +154,24 @@ async fn pair_host(
 
     let mut host = user.host(host_id).await?;
 
-    let pin = PairPin::new_random(&OpenSSLCryptoBackend)?;
+    // 如果提供了 PIN，则使用提供的 PIN，否则生成随机 PIN
+    let pin = match request.pin {
+        Some(pin_str) => {
+            // 将字符串解析为数字列表
+            let digits: Vec<u8> = pin_str.chars()
+                .filter_map(|c| c.to_digit(10).map(|d| d as u8))
+                .collect();
+            if digits.len() < 4 {
+                return Err(AppError::InvalidPin);
+            }
+            // Moonlight 通常使用 4 位 PIN，如果提供多于 4 位，取前 4 位
+            PairPin::new(digits[0], digits[1], digits[2], digits[3]).ok_or(AppError::InvalidPin)?
+        }
+        None => PairPin::new_random(&OpenSSLCryptoBackend)?,
+    };
+    let response1 = PostPairResponse1::Pin(pin.to_string());
 
-    let (stream_response, stream_sender) =
-        StreamedResponse::new(PostPairResponse1::Pin(pin.to_string()));
+    let (stream_response, stream_sender) = StreamedResponse::new(response1);
 
     spawn(async move {
         let result = host.pair(&mut user, pin).await;

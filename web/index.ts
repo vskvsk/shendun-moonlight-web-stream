@@ -1,5 +1,5 @@
 import "./polyfill/index.js"
-import { Api, getApi, apiPostHost, FetchError, apiLogout, apiGetUser, tryLogin, apiGetHost, apiGetRole, apiPatchRole } from "./api.js";
+import { Api, getApi, apiPostHost, FetchError, apiLogout, apiGetUser, tryLogin, apiGetHost, apiGetRole, apiPatchRole, apiGetHosts, apiPostPair } from "./api.js";
 import { AddHostModal } from "./component/host/add_modal.js";
 import { HostList } from "./component/host/list.js";
 import { Component, ComponentEvent } from "./component/index.js";
@@ -76,6 +76,7 @@ class MainApp implements Component {
     private api: Api
     private user: DetailedUser | null = null
     private role: DetailedRole | null = null
+    private _mlUrlParamsHandled = false
 
     private divElement = document.createElement("div")
 
@@ -399,6 +400,8 @@ class MainApp implements Component {
             promiseRoles,
             this.refreshGameListActiveGame()
         ])
+
+        await this.maybeHandleUrlParams()
     }
     private async refreshUserRole() {
         this.user = await apiGetUser(this.api)
@@ -469,5 +472,92 @@ class MainApp implements Component {
     }
     unmount(parent: HTMLElement): void {
         parent.removeChild(this.divElement)
+    }
+
+    private parseUrlParams(): { address: string | null, port: number | null, pin: string | null } {
+        const sp = new URLSearchParams(window.location.search)
+        const address = sp.get("address") ?? sp.get("host") ?? sp.get("ip")
+        const portStr = sp.get("port") ?? sp.get("http_port")
+        const pin = sp.get("pin")
+        let port: number | null = null
+        if (portStr != null && portStr !== "") {
+            const n = Number(portStr)
+            if (!Number.isNaN(n) && Number.isFinite(n)) {
+                port = n
+            }
+        }
+        return { address: address ?? null, port, pin }
+    }
+    private async findHostByAddress(address: string, port: number | null): Promise<number | null> {
+        const hosts = await apiGetHosts(this.api)
+        const ids = hosts.response.hosts.map(h => h.host_id)
+        for (const id of ids) {
+            try {
+                const d = await apiGetHost(this.api, { host_id: id })
+                const sameAddress = d.address === address
+                const samePort = port == null ? true : d.http_port === port
+                if (sameAddress && samePort) {
+                    return id
+                }
+            } catch {
+            }
+        }
+        return null
+    }
+    private async autoPair(hostId: number, pin: string | null): Promise<boolean> {
+        const stream = await apiPostPair(this.api, { host_id: hostId, pin: pin ?? null })
+        if (typeof stream.response === "string") {
+            return false
+        }
+        const result = await stream.next()
+        if (!result) {
+            return false
+        }
+        if (typeof result === "string") {
+            return false
+        }
+        return true
+    }
+    private async waitForHostPaired(hostId: number, timeoutMs: number = 60000, intervalMs: number = 1000): Promise<boolean> {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            try {
+                const host = await apiGetHost(this.api, { host_id: hostId })
+                if (host.paired === "Paired") {
+                    return true
+                }
+            } catch {
+            }
+            await new Promise(r => setTimeout(r, intervalMs))
+        }
+        return false
+    }
+    private async maybeHandleUrlParams() {
+        if (this._mlUrlParamsHandled) {
+            return
+        }
+        const { address, port, pin } = this.parseUrlParams()
+        if (!address) {
+            return
+        }
+        this._mlUrlParamsHandled = true
+        let hostId = await this.findHostByAddress(address, port)
+        if (hostId == null) {
+            try {
+                const newHost = await apiPostHost(this.api, { address, http_port: port })
+                hostId = newHost.host_id
+                this.hostList.insertList(newHost.host_id, newHost)
+            } catch {
+                return
+            }
+        }
+        const pairedStarted = await this.autoPair(hostId, pin)
+        if (!pairedStarted) {
+            return
+        }
+        const ok = await this.waitForHostPaired(hostId)
+        if (ok) {
+            this.setCurrentDisplay("games", { hostId })
+        }
     }
 }

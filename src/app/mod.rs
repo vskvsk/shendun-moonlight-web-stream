@@ -54,6 +54,8 @@ pub enum AppError {
     HostPaired,
     #[error("the host must be paired for this action")]
     HostNotPaired,
+    #[error("invalid pin")]
+    InvalidPin,
     // -- Unauthorized
     #[error("the credentials don't exists")]
     CredentialsWrong,
@@ -115,6 +117,7 @@ impl ResponseError for AppError {
             Self::PasswordEmpty => StatusCode::BAD_REQUEST,
             Self::UserNameEmpty => StatusCode::BAD_REQUEST,
             Self::BadRequest => StatusCode::BAD_REQUEST,
+            Self::InvalidPin => StatusCode::BAD_REQUEST,
             Self::Moonlight(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Io(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
