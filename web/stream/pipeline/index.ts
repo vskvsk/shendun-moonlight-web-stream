@@ -19,6 +19,43 @@ import { StatValue } from "../stats.js";
 import { Yuv420ToRgbaFramePipe } from "../video/video_frame.js";
 import { MediaSourceDecoder } from "../video/media_source_decoder.js";
 
+function setPipeName(pipe: any, name: string) {
+    Object.defineProperty(pipe, "name", { value: name })
+}
+
+setPipeName(WorkerVideoFrameSendPipe, "WorkerVideoFrameSendPipe")
+setPipeName(WorkerVideoFrameReceivePipe, "WorkerVideoFrameReceivePipe")
+setPipeName(WorkerDataSendPipe, "WorkerDataSendPipe")
+setPipeName(WorkerDataReceivePipe, "WorkerDataReceivePipe")
+setPipeName(WorkerVideoTrackSendPipe, "WorkerVideoTrackSendPipe")
+setPipeName(WorkerVideoTrackReceivePipe, "WorkerVideoTrackReceivePipe")
+setPipeName(WorkerVideoDataSendPipe, "WorkerVideoDataSendPipe")
+setPipeName(WorkerVideoDataReceivePipe, "WorkerVideoDataReceivePipe")
+setPipeName(WorkerOffscreenCanvasSendPipe, "WorkerOffscreenCanvasSendPipe")
+setPipeName(WorkerVideoMediaStreamProcessorPipe, "WorkerVideoMediaStreamProcessorPipe")
+setPipeName(WorkerVideoMediaStreamProcessorCanvasPipe, "WorkerVideoMediaStreamProcessorCanvasPipe")
+setPipeName(WorkerDataToVideoTrackPipe, "WorkerVideoFrameToTrackPipe")
+setPipeName(WorkerDataToCanvasGlRenderOpenH264Pipe, "WorkerDataToCanvasGlRenderOpenH264Pipe")
+
+setPipeName(DepacketizeVideoPipe, "DepacketizeVideoPipe")
+setPipeName(VideoMediaStreamTrackGeneratorPipe, "VideoMediaStreamTrackGeneratorPipe")
+setPipeName(VideoMediaStreamTrackProcessorPipe, "VideoMediaStreamTrackProcessorPipe")
+setPipeName(VideoDecoderPipe, "VideoDecoderPipe")
+setPipeName(OpenH264DecoderPipe, "OpenH264DecoderPipe")
+setPipeName(Yuv420ToRgbaFramePipe, "Yuv420ToRgbaFramePipe")
+setPipeName(MediaSourceDecoder, "MediaSourceDecoder")
+setPipeName(VideoTrackGeneratorPipe, "VideoTrackGeneratorPipe")
+setPipeName(CanvasFrameDrawPipe, "CanvasFrameDrawPipe")
+setPipeName(CanvasYuv420FrameDrawPipe, "CanvasYuv420FrameDrawPipe")
+setPipeName(CanvasRgbaFrameDrawPipe, "CanvasRgbaFrameDrawPipe")
+
+setPipeName(DepacketizeAudioPipe, "DepacketizeAudioPipe")
+setPipeName(AudioMediaStreamTrackGeneratorPipe, "AudioMediaStreamTrackGeneratorPipe")
+setPipeName(AudioDecoderPipe, "AudioDecoderPipe")
+setPipeName(OpusAudioDecoderPipe, "OpusAudioDecoderPipe")
+setPipeName(AudioBufferPipe, "AudioBufferPipe")
+setPipeName(AudioContextTrackPipe, "AudioContextTrackPipe")
+
 export interface Pipe {
     readonly implementationName: string
 

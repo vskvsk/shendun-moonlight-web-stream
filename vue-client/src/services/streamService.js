@@ -4,6 +4,7 @@ import '../../../dist/polyfill/index.js'
 import { Stream } from '../../../dist/stream/index.js'
 import { defaultStreamInputConfig, StreamInput } from '../../../dist/stream/input.js'
 import { Logger } from '../../../dist/stream/log.js'
+import { TransportChannelId } from '../../../dist/api_bindings.js'
 
 const moonlightModules = { Stream, defaultStreamInputConfig, StreamInput, Logger }
 
@@ -14,6 +15,7 @@ export class StreamService {
     this.eventTarget = new EventTarget()
     this.isInitialized = false
     this.isConnected = false  // connectionComplete 后置为 true
+    this._webrtcFallbackAttempted = false
   }
 
   // 初始化事件监听
@@ -51,8 +53,16 @@ export class StreamService {
     try {
       const modules = await this.loadMoonlightModules()
       
-      // 合并设置
-      const streamSettings = { ...MOONLIGHT_CONFIG.defaultSettings, ...settings }
+      const extraInputConfig = (settings && typeof settings === 'object' && settings.inputConfig && typeof settings.inputConfig === 'object')
+        ? settings.inputConfig
+        : {}
+      const { inputConfig: _ignoredInputConfig, ...settingsWithoutNestedInputConfig } = settings ?? {}
+      const streamSettings = {
+        ...MOONLIGHT_CONFIG.defaultSettings,
+        ...MOONLIGHT_CONFIG.inputConfig,
+        ...extraInputConfig,
+        ...settingsWithoutNestedInputConfig
+      }
       const screenSize = [window.innerWidth, window.innerHeight]
 
       // 创建流实例
@@ -61,6 +71,7 @@ export class StreamService {
         allow_transport_websockets: true
       }
       this.stream = new modules.Stream(this.api, hostId, appId, streamSettings, screenSize, permissions)
+      this._webrtcFallbackAttempted = false
       
       // 设置事件监听
       this.setupStreamListeners()
@@ -92,6 +103,7 @@ export class StreamService {
           connectionEstablished = true
           this.isConnected = true
           this.emit('ready', { capabilities: data.capabilities })
+          void this._ensureInteractiveTransport()
           break
         case 'app':
           this.emit('appInfo', data.app)
@@ -114,6 +126,57 @@ export class StreamService {
           break
       }
     })
+  }
+
+  _getWebRtcChannelState(channelId) {
+    const transport = this.stream?.transport
+    if (!transport || transport.implementationName !== 'webrtc') return { ok: true }
+    let ch = transport.channels?.[channelId]
+    if (!ch && typeof transport.getChannel === 'function') {
+      try {
+        ch = transport.getChannel(channelId)
+      } catch {
+        return { ok: false }
+      }
+    }
+    const rtc = ch?.channel
+    if (!rtc) return { ok: false }
+    if (rtc.readyState !== 'open') return { ok: false }
+    return { ok: true }
+  }
+
+  async _ensureInteractiveTransport() {
+    const transport = this.stream?.transport
+    if (!transport) return
+    if (transport.implementationName !== 'webrtc') return
+    if (this._webrtcFallbackAttempted) return
+
+    await new Promise(r => setTimeout(r, 2500))
+
+    const required = [
+      TransportChannelId.KEYBOARD,
+      TransportChannelId.MOUSE_RELIABLE,
+      TransportChannelId.MOUSE_ABSOLUTE,
+      TransportChannelId.MOUSE_RELATIVE,
+      TransportChannelId.TOUCH,
+      TransportChannelId.CONTROLLERS
+    ]
+
+    const notReady = []
+    for (const id of required) {
+      const st = this._getWebRtcChannelState(id)
+      if (!st.ok) notReady.push(id)
+    }
+
+    if (!notReady.length) return
+
+    this._webrtcFallbackAttempted = true
+    this.emit('debug', { message: 'WebRTC DataChannel 未就绪，切换到 WebSocket 传输以确保可交互', type: 'info' })
+    try {
+      await this.stream.restartWithFreshTransportFallback('websocket')
+    } catch (e) {
+      this.emit('debug', { message: `切换 WebSocket 传输失败: ${e?.message ?? String(e)}`, type: 'error' })
+    }
   }
 
   // 获取输入控制器

@@ -9,18 +9,8 @@
     <div 
       class="input-layer"
       ref="inputLayer"
+      id="input"
       tabindex="0"
-      @keydown="onKeyDown"
-      @keyup="onKeyUp"
-      @mousedown="onMouseDown"
-      @mouseup="onMouseUp"
-      @mousemove="onMouseMove"
-      @wheel="onWheel"
-      @contextmenu.prevent
-      @touchstart="onTouchStart"
-      @touchend="onTouchEnd"
-      @touchmove="onTouchMove"
-      @touchcancel="onTouchCancel"
     ></div>
 
     <!-- 控制栏 -->
@@ -100,6 +90,12 @@ let viewportObserver = null
 // ── Canvas 自适应布局 ──────────────────────────────────────────────
 // 记录当前视频流内部分辨率
 const videoResolution = { width: 0, height: 0 }
+
+const onUserInteraction = () => {
+  inputLayer.value?.focus()
+  streamService.getVideoRenderer()?.onUserInteraction?.()
+  streamService.getAudioPlayer()?.onUserInteraction?.()
+}
 
 /**
  * 根据视频流分辨率和 viewport 容器尺寸，计算并应用
@@ -209,49 +205,120 @@ const setupInputHandlers = () => {
 }
 
 const onKeyDown = (e) => {
+  onUserInteraction()
   inputHandlers?.onKeyDown(e)
   // 全屏快捷键: Ctrl+Shift+F
   if (e.ctrlKey && e.shiftKey && e.key === 'F') {
     toggleFullscreen()
   }
+  e.stopPropagation()
 }
 
 const onKeyUp = (e) => {
+  onUserInteraction()
   inputHandlers?.onKeyUp(e)
+  e.stopPropagation()
 }
 
 const onMouseDown = (e) => {
+  onUserInteraction()
   inputHandlers?.onMouseDown(e, getStreamRect())
-  inputLayer.value?.focus()
+  e.stopPropagation()
 }
 
 const onMouseUp = (e) => {
   inputHandlers?.onMouseUp(e)
+  e.stopPropagation()
 }
 
 const onMouseMove = (e) => {
   inputHandlers?.onMouseMove(e, getStreamRect())
   resetControlsTimer()
+  e.stopPropagation()
 }
 
 const onWheel = (e) => {
   inputHandlers?.onMouseWheel(e)
+  e.stopPropagation()
 }
 
 const onTouchStart = (e) => {
+  onUserInteraction()
   inputHandlers?.onTouchStart(e, getStreamRect())
+  e.stopPropagation()
 }
 
 const onTouchEnd = (e) => {
+  onUserInteraction()
   inputHandlers?.onTouchEnd(e, getStreamRect())
+  e.stopPropagation()
 }
 
 const onTouchMove = (e) => {
   inputHandlers?.onTouchMove(e, getStreamRect())
+  e.stopPropagation()
 }
 
 const onTouchCancel = (e) => {
+  onUserInteraction()
   inputHandlers?.onTouchCancel(e, getStreamRect())
+  e.stopPropagation()
+}
+
+let cleanupNativeInputListeners = null
+
+const isUiEvent = (event) => {
+  const target = event?.target
+  if (!(target instanceof Element)) return false
+  if (target.closest('.controls-bar')) return true
+  if (target.closest('.stats-panel')) return true
+  if (target.closest('.connection-status')) return true
+  if (target.closest('.virtual-keyboard-btn')) return true
+  return false
+}
+
+const bindNativeInputListeners = () => {
+  if (cleanupNativeInputListeners) return
+  const layer = inputLayer.value
+  if (!layer) return
+
+  const bindings = []
+  const on = (target, type, listener) => {
+    target.addEventListener(type, listener, { passive: false })
+    bindings.push({ target, type, listener })
+  }
+
+  const wrap = (fn) => (e) => {
+    if (isUiEvent(e)) return
+    fn(e)
+  }
+
+  const onContextMenu = (e) => {
+    if (isUiEvent(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  for (const el of [document, layer]) {
+    on(el, 'keydown', wrap(onKeyDown))
+    on(el, 'keyup', wrap(onKeyUp))
+    on(el, 'mousedown', wrap(onMouseDown))
+    on(el, 'mouseup', wrap(onMouseUp))
+    on(el, 'mousemove', wrap(onMouseMove))
+    on(el, 'wheel', wrap(onWheel))
+    on(el, 'contextmenu', onContextMenu)
+    on(el, 'touchstart', wrap(onTouchStart))
+    on(el, 'touchend', wrap(onTouchEnd))
+    on(el, 'touchcancel', wrap(onTouchCancel))
+    on(el, 'touchmove', wrap(onTouchMove))
+  }
+
+  cleanupNativeInputListeners = () => {
+    for (const { target, type, listener } of bindings) {
+      target.removeEventListener(type, listener)
+    }
+    cleanupNativeInputListeners = null
+  }
 }
 
 // 获取流画面区域
@@ -383,6 +450,7 @@ const onVisibilityChange = () => {
 
 onMounted(() => {
   setupInputHandlers()
+  bindNativeInputListeners()
   startStream()
   
   // 全局事件监听
@@ -410,6 +478,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopStream()
+  cleanupNativeInputListeners?.()
   
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   document.removeEventListener('pointerlockchange', onPointerLockChange)
@@ -462,6 +531,8 @@ onBeforeUnmount(() => {
   height: 100%;
   z-index: 10;
   outline: none;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .controls-bar {
