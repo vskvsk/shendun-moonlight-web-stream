@@ -13,70 +13,86 @@
 
     <!-- 游戏主界面 -->
     <template v-else-if="isLoggedIn && !isStreaming">
-      <!-- 顶部导航 -->
-      <TopNav
-        v-model="searchQuery"
-        :host-name="selectedHost?.name ?? ''"
-        @logo-click="goHome"
-        @nav-click="handleNav"
-        @logout="logout"
-      />
+      <!-- 主机管理模式 -->
+      <template v-if="isControlMode">
+        <HostList
+          :hosts="hosts"
+          :user="currentUser"
+          @select="handleHostSelect"
+          @logout="logout"
+          @refresh="loadHosts"
+          @add-host="handleAddHost"
+          @delete="handleDeleteHost"
+        />
+      </template>
 
-      <main class="main-content">
-        <div v-if="!selectedHost" class="host-transition">
-          <div class="spinner" />
-          <h2 class="host-transition-title">{{ hostTransitionTitle }}</h2>
-          <p class="host-transition-subtitle">{{ hostTransitionSubtitle }}</p>
-          <div class="host-transition-actions">
-            <button class="btn-secondary" @click="reloadAndConnect">重试</button>
-            <button class="btn-secondary" @click="logout">退出登录</button>
-          </div>
-        </div>
+      <!-- 正常游戏模式 -->
+      <template v-else>
+        <!-- 顶部导航 -->
+        <TopNav
+          v-model="searchQuery"
+          :host-name="selectedHost?.name ?? ''"
+          @logo-click="goHome"
+          @nav-click="handleNav"
+          @logout="logout"
+        />
 
-        <!-- 游戏列表 -->
-        <template v-else>
-          <div class="games-topbar-spacer" />
-
-          <!-- Hero 轮播 -->
-          <HeroCarousel
-            :apps="heroApps"
-            :app-images="appImages"
-            :loading="appsLoading"
-            @play="startGame"
-          />
-
-          <!-- 热玩排行 -->
-          <HotRanking
-            :apps="filteredApps"
-            :app-images="appImages"
-            @play="startGame"
-          />
-
-          <!-- 游戏网格 -->
-          <GameGrid
-            :apps="filteredApps"
-            :app-images="appImages"
-            :title="searchQuery ? '搜索结果' : '全部游戏'"
-            @play="startGame"
-          />
-
-          <!-- 搜索空态 -->
-          <div class="empty-wrap" v-if="filteredApps.length === 0 && searchQuery">
-            <div class="empty-icon">🔍</div>
-            <p>未找到匹配的游戏</p>
-            <button class="btn-clear" @click="searchQuery = ''">清除搜索</button>
+        <main class="main-content">
+          <div v-if="!selectedHost" class="host-transition">
+            <div class="spinner" />
+            <h2 class="host-transition-title">{{ hostTransitionTitle }}</h2>
+            <p class="host-transition-subtitle">{{ hostTransitionSubtitle }}</p>
+            <div class="host-transition-actions">
+              <button class="btn-secondary" @click="reloadAndConnect">重试</button>
+              <button class="btn-secondary" @click="logout">退出登录</button>
+            </div>
           </div>
 
-          <!-- 无游戏空态 -->
-          <div class="empty-wrap" v-else-if="filteredApps.length === 0 && !appsLoading">
-            <div class="empty-icon">🎮</div>
-            <p>该主机暂无游戏</p>
-          </div>
-        </template>
-      </main>
+          <!-- 游戏列表 -->
+          <template v-else>
+            <div class="games-topbar-spacer" />
 
-      <!-- 底部 -->
-      <AppFooter />
+            <!-- Hero 轮播 -->
+            <HeroCarousel
+              :apps="heroApps"
+              :app-images="appImages"
+              :loading="appsLoading"
+              @play="startGame"
+            />
+
+            <!-- 热玩排行 -->
+            <HotRanking
+              :apps="filteredApps"
+              :app-images="appImages"
+              @play="startGame"
+            />
+
+            <!-- 游戏网格 -->
+            <GameGrid
+              :apps="filteredApps"
+              :app-images="appImages"
+              :title="searchQuery ? '搜索结果' : '全部游戏'"
+              @play="startGame"
+            />
+
+            <!-- 搜索空态 -->
+            <div class="empty-wrap" v-if="filteredApps.length === 0 && searchQuery">
+              <div class="empty-icon">🔍</div>
+              <p>未找到匹配的游戏</p>
+              <button class="btn-clear" @click="searchQuery = ''">清除搜索</button>
+            </div>
+
+            <!-- 无游戏空态 -->
+            <div class="empty-wrap" v-else-if="filteredApps.length === 0 && !appsLoading">
+              <div class="empty-icon">🎮</div>
+              <p>该主机暂无游戏</p>
+            </div>
+          </template>
+        </main>
+
+        <!-- 底部 -->
+        <AppFooter />
+      </template>
     </template>
 
     <!-- 游戏流界面 -->
@@ -117,10 +133,12 @@ import HotRanking from '@/components/HotRanking.vue'
 import GameGrid from '@/components/GameGrid.vue'
 import LoginScreen from '@/components/LoginScreen.vue'
 import AppFooter from '@/components/AppFooter.vue'
-import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetHost, apiPostHost, apiPostPair, apiGetApps, apiGetAppImage } from '@/services/api.js'
+import HostList from '@/components/HostList.vue'
+import { apiLogin, apiAuthenticate, apiGetUser, apiGetHosts, apiGetHost, apiPostHost, apiDeleteHost, apiPostPair, apiGetApps, apiGetAppImage } from '@/services/api.js'
 import { MOONLIGHT_CONFIG, getRuntimeUrlParams, getRuntimePin } from '@/config/moonlight.js'
 
 const urlParams = getRuntimeUrlParams()
+const isControlMode = computed(() => urlParams.has('control'))
 
 function getFirstParam(keys) {
   for (const key of keys) {
@@ -233,6 +251,30 @@ const filteredApps = computed(() => {
 })
 
 const heroApps = computed(() => filteredApps.value.slice(0, 5))
+
+// ============ 控制模式方法 ============
+const handleHostSelect = async (host) => {
+  await selectHost(host)
+}
+
+const handleAddHost = async (data) => {
+  try {
+    const created = await apiPostHost(data)
+    mergeHostIntoList(created)
+  } catch (e) {
+    console.error('添加主机失败:', e)
+  }
+}
+
+const handleDeleteHost = async (host) => {
+  if (!confirm(`确定要删除主机 "${host.name}" 吗？`)) return
+  try {
+    await apiDeleteHost(host.host_id)
+    hosts.value = hosts.value.filter(h => h.host_id !== host.host_id)
+  } catch (e) {
+    console.error('删除主机失败:', e)
+  }
+}
 
 // ============ 方法 ============
 // 检查登录状态
@@ -466,7 +508,10 @@ const loadHosts = async () => {
     const first = await stream.next()
     if (first && first.hosts) {
       hosts.value = first.hosts
-      await tryAutoSelectHost()
+      // 非控制模式下自动选择主机
+      if (!isControlMode.value) {
+        await tryAutoSelectHost()
+      }
     }
     let item
     while ((item = await stream.next()) !== null) {
@@ -476,7 +521,10 @@ const loadHosts = async () => {
           hosts.value[idx] = { ...hosts.value[idx], ...item }
         }
       }
-      await tryAutoSelectHost()
+      // 非控制模式下自动选择主机
+      if (!isControlMode.value) {
+        await tryAutoSelectHost()
+      }
     }
   } catch (e) {
     console.error('加载主机列表失败:', e)
